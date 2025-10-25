@@ -16,7 +16,7 @@ DB_INSTANCE="neuro-ai-postgres-instance"
 DB_NAME="neuro_asset_db"
 DB_USER="admin_user"
 DB_PASS="Aidevgroup@321"
-BUCKET="neuro-ai-assets-bucket"
+BUCKET="neuro-ai-assets-buckett"
 
 
 # Database configuration
