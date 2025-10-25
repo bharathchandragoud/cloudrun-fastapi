@@ -1,8 +1,12 @@
-from fastapi import FastAPI
-from google.cloud import storage
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from google.cloud import storage
 import os
+from datetime import datetime
+import uuid
+
 
 app = FastAPI(title="AI Image/Video Generator")
 
@@ -39,15 +43,45 @@ async def health_check():
 
 # Example: Upload generated image to Cloud Storage
 @app.post("/upload-image")
-async def upload_image(file_name: str, file_data: bytes):
-    bucket = storage_client.bucket(BUCKET_NAME)
-    blob = bucket.blob(f"generated-images/{file_name}")
-    blob.upload_from_string(file_data, content_type="image/png")
-    
-    # Get public URL
-    public_url = blob.public_url
-    
-    return {
-        "message": "Image uploaded successfully",
-        "url": public_url
-    }
+async def upload_image(file: UploadFile = File(...)):
+
+    try:
+        # Validate file type
+        allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
+            )
+        
+        # Generate unique filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_extension = file.filename.split(".")[-1]
+        unique_filename = f"generated-images/{timestamp}_{uuid.uuid4().hex[:8]}.{file_extension}"
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Upload to Cloud Storage
+        bucket = storage_client.bucket(BUCKET_NAME)
+        blob = bucket.blob(unique_filename)
+        blob.upload_from_string(file_content, content_type=file.content_type)
+        
+        # Make blob publicly readable (optional)
+        # blob.make_public()
+        
+        # Get public URL (if public) or signed URL (if private)
+        public_url = blob.public_url
+        
+        return {
+            "success": True,
+            "message": "Image uploaded successfully",
+            "filename": unique_filename,
+            "url": public_url,
+            "size": len(file_content),
+            "content_type": file.content_type
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
