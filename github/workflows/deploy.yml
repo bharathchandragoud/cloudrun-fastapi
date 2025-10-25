@@ -9,11 +9,15 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   SERVICE_NAME: ai-service
   REGION: us-central1
+  DB_INSTANCE: neuro-ai-postgres-instance
+  DB_NAME: neuro_asset_db
+  DB_USER: Aidevgroup@321
+  BUCKET_NAME: neuro-ai-assets-bucket
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,17 +30,37 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Build and Deploy to Cloud Run
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
+      - name: Build Docker image
+        run: |
+          docker build -t gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA .
+          docker build -t gcr.io/$PROJECT_ID/$SERVICE_NAME:latest .
+
+      - name: Push Docker image to GCR
+        run: |
+          docker push gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA
+          docker push gcr.io/$PROJECT_ID/$SERVICE_NAME:latest
+
+      - name: Deploy to Cloud Run
         run: |
           gcloud run deploy $SERVICE_NAME \
-            --source=. \
-            --region=$REGION \
-            --platform=managed \
-            --allow-unauthenticated
+            --image gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA \
+            --region $REGION \
+            --platform managed \
+            --allow-unauthenticated \
+            --add-cloudsql-instances=$PROJECT_ID:$REGION:$DB_INSTANCE \
+            --set-env-vars="DATABASE_URL=postgresql://$DB_USER:${{ secrets.DB_PASSWORD }}@/$DB_NAME?host=/cloudsql/$PROJECT_ID:$REGION:$DB_INSTANCE,BUCKET_NAME=$BUCKET_NAME" \
+            --memory 2Gi \
+            --cpu 2 \
+            --timeout 300 \
+            --max-instances 10
 
-      - name: Get Service URL
+      - name: Show Service URL
         run: |
-          URL=$(gcloud run services describe $SERVICE_NAME \
-            --region=$REGION \
+          SERVICE_URL=$(gcloud run services describe $SERVICE_NAME \
+            --region $REGION \
             --format='value(status.url)')
-          echo "Service deployed at: $URL"
+          echo "✅ Deployed successfully!"
+          echo "🔗 Service URL: $SERVICE_URL"
