@@ -9,15 +9,13 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   SERVICE_NAME: ai-service
   REGION: us-central1
-  DB_INSTANCE: neuro-ai-postgres-instance
-  DB_NAME: neuro_asset_db
-  DB_USER: Aidevgroup@321
-  BUCKET_NAME: neuro-ai-assets-bucket
+  REPOSITORY: docker-repo
+  IMAGE: ai-service
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -30,28 +28,27 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker for GCR
-        run: gcloud auth configure-docker
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker $REGION-docker.pkg.dev
 
       - name: Build Docker image
         run: |
-          docker build -t gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA .
-          docker build -t gcr.io/$PROJECT_ID/$SERVICE_NAME:latest .
+          docker build -t $REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE:$GITHUB_SHA .
+          docker build -t $REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE:latest .
 
-      - name: Push Docker image to GCR
+      - name: Push Docker image
         run: |
-          docker push gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA
-          docker push gcr.io/$PROJECT_ID/$SERVICE_NAME:latest
+          docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE:$GITHUB_SHA
+          docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE:latest
 
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy $SERVICE_NAME \
-            --image gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA \
+            --image $REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE:$GITHUB_SHA \
             --region $REGION \
             --platform managed \
             --allow-unauthenticated \
-            --add-cloudsql-instances=$PROJECT_ID:$REGION:$DB_INSTANCE \
-            --set-env-vars="DATABASE_URL=postgresql://$DB_USER:${{ secrets.DB_PASSWORD }}@/$DB_NAME?host=/cloudsql/$PROJECT_ID:$REGION:$DB_INSTANCE,BUCKET_NAME=$BUCKET_NAME" \
             --memory 2Gi \
             --cpu 2 \
             --timeout 300 \
